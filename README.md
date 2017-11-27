@@ -94,6 +94,20 @@ python install.py
 ```
 4. Provide your sample app name and region when requested by the install.py script.
 
+
+### c. Uninstall the sample app
+Uninstalling the sample app is easy as well. It removes any relevant S3 bucket and resources created from the CloudFormation template.
+
+1. Go to Setup/ directory.
+```
+cd Setup/
+```
+2. Run uninstall.py script
+```
+python uninstall.py
+```
+3. Provide your sample app name and region when requested by the uninstall.py script.
+
 ## Using the sample app
 1. The sample app is on an AWS Lambda environment, which is triggered by a CloudWatch event at the scheduled time defined by you.
 2. This sample app analyzes your AWS X-Ray service graph for the scheduled time frame and sends out a CloudWatch event in case it finds latency, error or faults breach the threshold. This threshold is also defined by you in the xraycloudwatch.json file.
