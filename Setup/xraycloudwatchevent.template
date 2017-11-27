@@ -1,0 +1,348 @@
+#Copyright 2017-2017 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+
+#Licensed under the Apache License, Version 2.0 (the "License").
+#You may not use this file except in compliance with the License.
+#A copy of the License is located at http://aws.amazon.com/apache2.0/ or in the "license" file accompanying this file.
+#This file is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#See the License for the specific language governing permissions and limitations under the License.
+---
+AWSTemplateFormatVersion: '2010-09-09'
+Parameters:
+  appname:
+    Type: String
+    Description: This parameter will be used for naming your CloudFormation stack, public s3 bucket and as a prefix to identify all the Lambda functions and IAM Roles associated with your app.
+    MinLength: '1'
+    MaxLength: '21'
+    AllowedPattern: "^[a-z0-9]+$"
+    ConstraintDescription: 'Malformed input-Parameter: appname must match pattern ^[a-z0-9]+$ with max length of 21 characters'
+  analyzeservicemapminutes:
+    Type: Number
+    MinValue: 5
+    MaxValue: 360
+    Default: 5
+    Description: This parameter (in minutes) will be used to set the rate for schedule to run the Lambda function.
+    ConstraintDescription: 'Malformed input-Parameter: analyzeservicemapevery must match pattern ^[0-9]+$ with min value of 5 (5 minutes) max value of 360 (6 hours)'
+  periodcwalarm:
+    Type: Number
+    MinValue: 300
+    MaxValue: 21600
+    Default: 300
+    Description: This parameter is calculated in seconds from analyzeservicemapminutes parameter.
+    ConstraintDescription: 'Malformed input-Parameter: analyzeservicemapevery must match pattern ^[0-9]+$ with min value of 300 (5 minutes) max value of 21600 (6 hours)'
+  evaluationperiodforcwalarm:
+    Type: Number
+    MinValue: 1
+    MaxValue: 10
+    Default: 1
+    Description: This parameter (in number of periods) is used for the CloudWatch Alarm for setting EvaluationPeriod.
+    ConstraintDescription: 'Malformed input-Parameter: evaluationperiodforcwalarm must match pattern ^[0-9]+$ with min value of 1 max value of 10'
+Resources:
+    s3XCW:
+       Type: AWS::S3::Bucket
+       Properties:
+         BucketName:
+           Fn::Join:
+           - '-'
+           - - Ref: appname
+             - 'xraycloudwatcheventbucket'
+         AccessControl: Private
+         CorsConfiguration:
+           CorsRules:
+           - AllowedHeaders:
+             - "*"
+             AllowedMethods:
+             - POST
+             - GET
+             - PUT
+             - DELETE
+             - HEAD
+             AllowedOrigins:
+             - "*"
+             ExposedHeaders:
+             - Etag
+             Id: corsxcw
+    xcwSNSAlerts:
+        Type: "AWS::SNS::Topic"
+        Properties:
+            TopicName:
+                Fn::Join:
+                - '-'
+                - - Ref: appname
+                  - 'cloudwatcheventsnstopic'
+            DisplayName:
+                Fn::Join:
+                - '-'
+                - - 'XCW ALERT FOR YOUR APP'
+                  - Ref: appname
+    xcwSNSCWAlarmAlert:
+        Type: "AWS::SNS::Topic"
+        Properties:
+            TopicName:
+                Fn::Join:
+                - '-'
+                - - Ref: appname
+                  - 'cloudwatchalarmsnstopic'
+            DisplayName:
+                Fn::Join:
+                - '-'
+                - - 'XCW ALARM ALERT FOR YOUR APP'
+                  - Ref: appname
+    xcwEventRule:
+        Type: "AWS::Events::Rule"
+        Properties:
+            Description:
+                Fn::Join:
+                - '-'
+                - - Ref: appname
+                  - 'CloudWatch event for XCW Alerts'
+            Name:
+                Fn::Join:
+                - '-'
+                - - 'XRAYALERTSFOR'
+                  - Ref: appname
+            EventPattern:
+                source:
+                    - Fn::Join:
+                      - '-'
+                      - - Ref: appname
+                        - 'xcw.alerts'
+                detail-type:
+                    - 'XCW Notification for Alerts'
+            State: 'ENABLED'
+            Targets:
+                -
+                    Arn:
+                        Ref: 'xcwSNSAlerts'
+                    Id: 'TargetForAWSXRAYSNSAlerts'
+                    InputTransformer:
+                        InputPathsMap:
+                            alertToShow: "$.detail.status"
+                        InputTemplate: "\"XCW: <alertToShow>. Please visit 'https://console.aws.amazon.com/xray/home' for more details.\""
+    PolicyForEventsToPublishSNS:
+        Type: AWS::SNS::TopicPolicy
+        Properties:
+            PolicyDocument:
+                Id: Policy1509913587609
+                Version: '2012-10-17'
+                Statement:
+                - Sid: Stmt1509913581341
+                  Action:
+                  - 'sns:Publish'
+                  Effect: Allow
+                  Resource:
+                    - Ref: 'xcwSNSAlerts'
+                  Principal:
+                    Service: 'events.amazonaws.com'
+            Topics:
+                - Ref: 'xcwSNSAlerts'
+    PolicyForAlarmToPublishSNS:
+        Type: AWS::SNS::TopicPolicy
+        Properties:
+            PolicyDocument:
+                Id: Policy1509826587100
+                Version: '2012-10-17'
+                Statement:
+                - Sid: Stmt1509913591520
+                  Action:
+                  - 'sns:Publish'
+                  Effect: Allow
+                  Resource:
+                    - Ref: 'xcwSNSCWAlarmAlert'
+                  Principal: '*'
+                  Condition:
+                    ArnEquals:
+                      AWS:SourceArn:
+                        Fn::GetAtt:
+                        - xcwCloudWatchAlarm
+                        - Arn
+            Topics:
+                - Ref: 'xcwSNSCWAlarmAlert'
+    LambdaIAMRole:
+      Type: AWS::IAM::Role
+      Properties:
+        AssumeRolePolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+              - lambda.amazonaws.com
+            Action:
+            - sts:AssumeRole
+        Path: "/"
+        ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AWSXrayWriteOnlyAccess
+        - arn:aws:iam::aws:policy/AWSXrayReadOnlyAccess
+        - arn:aws:iam::aws:policy/CloudWatchEventsFullAccess
+        - arn:aws:iam::aws:policy/AWSLambdaExecute
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaRole
+        RoleName:
+          Fn::Join:
+            - '-'
+            - - Ref: appname
+              - 'LambdaXCWRole'
+    S3ManagedPolicyRWL:
+      Type: "AWS::IAM::Policy"
+      Properties:
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Sid: Stmt1505428188000
+            Effect: Allow
+            Action:
+            - s3:GetObject
+            - s3:ListBucket
+            - s3:PutObject
+            - s3:CreateBucket
+            - s3:ListObjects
+            - s3:PutObjectAcl
+            - s3:DeleteObject
+            Resource:
+            - Fn::Join:
+                  - ''
+                  - - 'arn:aws:s3:::'
+                    - Ref: s3XCW
+            - Fn::Join:
+                - ''
+                - - 'arn:aws:s3:::'
+                  - Ref: s3XCW
+                  - "/*"
+        PolicyName: "AmazonS3ReadWriteListAccess"
+        Roles:
+          -
+            Ref: "LambdaIAMRole"
+    SNSManagedPolicyXCW:
+      Type: "AWS::IAM::Policy"
+      Properties:
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Sid: Stmt1506359188000
+            Effect: Allow
+            Action:
+            - sns:CreateTopic
+            - sns:Subscribe
+            - sns:ListSubscriptionsByTopic
+            Resource:
+            - Fn::Join:
+                - ':'
+                - - 'arn:aws:sns'
+                  - Ref: AWS::Region
+                  - Ref: AWS::AccountId
+                  - '*'
+        PolicyName: "XCWSNSManagedPolicy"
+        Roles:
+          -
+            Ref: "LambdaIAMRole"
+    CloudWatchManagedPolicyXCW:
+        Type: "AWS::IAM::Policy"
+        Properties:
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+            - Sid: Stmt1509379184000
+              Effect: Allow
+              Action:
+              - cloudwatch:PutMetricData
+              Resource:
+              - '*'
+          PolicyName: "XCWCloudWatchManagedPolicy"
+          Roles:
+            -
+              Ref: "LambdaIAMRole"
+    CloudWatchLambdaTriggerPermissionXCW:
+      Type: "AWS::Lambda::Permission"
+      Properties:
+        FunctionName:
+          Fn::GetAtt:
+          - xcwLambda
+          - Arn
+        Action: 'lambda:InvokeFunction'
+        Principal: events.amazonaws.com
+        SourceArn:
+          Fn::GetAtt:
+          - xcwScheduledRuleForInvokingLambda
+          - Arn
+    LambdaIAMInstanceProfile:
+      Type: AWS::IAM::InstanceProfile
+      Properties:
+        Path: "/"
+        Roles:
+        - Ref: LambdaIAMRole
+    xcwLambda:
+      Type: AWS::Lambda::Function
+      Properties:
+        FunctionName:
+          Fn::Join:
+            - '-'
+            - - Ref: appname
+              - 'xraycloudwatchevent'
+        Code:
+          S3Bucket: lambdacodexcw
+          S3Key: Archive.zip
+        Handler: xraycloudwatchevent.handler
+        Role:
+          Fn::GetAtt:
+          - LambdaIAMRole
+          - Arn
+        Runtime: python3.6
+        Timeout: '25'
+        TracingConfig:
+          Mode: Active
+        Environment:
+          Variables:
+            APP_NAME: !Ref appname
+            CW_EVENT_SNS: !GetAtt xcwSNSAlerts.TopicName
+            CW_ALARM_SNS: !GetAtt xcwSNSCWAlarmAlert.TopicName
+    xcwScheduledRuleForInvokingLambda:
+      Type: AWS::Events::Rule
+      Properties:
+        Description: Scheduled Rule for invoking the Lambda function that analyzes AWS X-Ray service graph and triggers CloudWatch
+        Name:
+          Fn::Join:
+            - '-'
+            - - 'SCHEDULEDLAMBDAFOR'
+              - Ref: appname
+        ScheduleExpression:
+          Fn::Join:
+            - ''
+            - - 'rate('
+              - Ref: analyzeservicemapminutes
+              - ' minutes)'
+        State: 'ENABLED'
+        Targets:
+          -
+            Id: LambdaTargetForScheduledEvent
+            Arn:
+              Fn::GetAtt:
+              - xcwLambda
+              - Arn
+    xcwCloudWatchAlarm:
+      Type: AWS::CloudWatch::Alarm
+      Properties:
+        AlarmName:
+          Fn::Join:
+            - '-'
+            - - 'XRayCloudWatchAlarm'
+              - Ref: appname
+        ActionsEnabled: Yes
+        AlarmActions:
+        - Ref: 'xcwSNSCWAlarmAlert'
+        AlarmDescription: 'XCW alarm for notifications'
+        ComparisonOperator: GreaterThanThreshold
+        EvaluationPeriods: !Ref evaluationperiodforcwalarm
+        TreatMissingData: notBreaching
+        MetricName: 'TriggeredRules'
+        Namespace: 'AWS/Events'
+        Dimensions:
+        - Name: 'RuleName'
+          Value: !Ref xcwEventRule
+        Period: !Ref periodcwalarm
+        Statistic: Sum
+        Threshold: '0'
+        Unit: Count
+
+
+
+
+

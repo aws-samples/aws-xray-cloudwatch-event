@@ -1,0 +1,26 @@
+{
+	"alerts":
+	{
+		"default":
+		{
+			"responseunitthreshold":2,
+			"errorpercentagethreshold":10,
+			"faultpercentagethreshold":10,
+			"throttlepercentagethreshold":20
+		}
+	},
+	"analyzeservicemapminutes":5,
+	"evaluationperiodforcwalarm":1,
+	"communications":
+	{
+		"sms":
+		[
+			"19876543210"
+		],
+		"email":
+		[
+			"abcd@efgh.com",
+			"stuv@wxyz.com"
+		]
+	}
+}
