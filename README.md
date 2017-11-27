@@ -1,4 +1,4 @@
-AWS Xray Cloudwatch Event - Using CloudWatch events to SNS notifications for AWS X-Ray
+# AWS Xray Cloudwatch Event - Using CloudWatch events to SNS notifications for AWS X-Ray
 
 ## License
 
