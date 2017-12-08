@@ -294,6 +294,7 @@ Resources:
             APP_NAME: !Ref appname
             CW_EVENT_SNS: !GetAtt xcwSNSAlerts.TopicName
             CW_ALARM_SNS: !GetAtt xcwSNSCWAlarmAlert.TopicName
+            SUBSCRIBE_TO_EMAIL_SMS: 'Yes'
     xcwScheduledRuleForInvokingLambda:
       Type: AWS::Events::Rule
       Properties:

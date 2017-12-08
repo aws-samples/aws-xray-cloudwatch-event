@@ -44,6 +44,9 @@ CW_EVENT_SNS = os.environ['CW_EVENT_SNS']
 # SNS Topic for the CloudWatch Alarm. This SNS topic will be used by CloudWatch Alarm to send the appropriate notification when the alarm goes to an ALARM state.
 CW_ALARM_SNS = os.environ['CW_ALARM_SNS']
 
+# Boolean to check if the sample app can subscribe to email and phone numbers listed
+SUBSCRIBE_TO_EMAIL_SMS = os.environ['SUBSCRIBE_TO_EMAIL_SMS']
+
 xrayclient = boto3.client(
 	'xray',
 	region_name=REGION_NAME
@@ -167,12 +170,15 @@ def subscribe_to_sms(communications_dict):
 				if(sms_number in existing_subscription_endpoints):
 					print_message("Number already subscribed")
 				else:
-					print_message("Number to subscribe for SMS: %s" % sms_number)
-					snsclient.subscribe(
-						TopicArn=topic_arn,
-						Protocol='sms',
-						Endpoint=sms_number
-					)
+					if SUBSCRIBE_TO_EMAIL_SMS == 'Yes':
+						print_message("Number to subscribe for SMS: %s" % sms_number)
+						snsclient.subscribe(
+							TopicArn=topic_arn,
+							Protocol='sms',
+							Endpoint=sms_number
+						)
+					else:
+						print_message("SUBSCRIBE_TO_EMAIL_SMS set to false. Not subscribing for SMS")
 	except ClientError as cesnscreatetopic:
 		print_message("Error while calling create_topic for %s: %s" % (topic_name, cesnscreatetopic), ERROR_MESSAGE)
 		raise
@@ -211,12 +217,15 @@ def subscribe_to_email(communications_dict):
 				if(email_address in existing_subscription_endpoints):
 					print_message("Email address already subscribed")
 				else:
-					print_message("Email address: %s to subscribe for sending emails" % email_address)
-					snsclient.subscribe(
-						TopicArn=topic_arn,
-						Protocol='email',
-						Endpoint=email_address
-					)
+					if SUBSCRIBE_TO_EMAIL_SMS == 'Yes':
+						print_message("Email address: %s to subscribe for sending emails" % email_address)
+						snsclient.subscribe(
+							TopicArn=topic_arn,
+							Protocol='email',
+							Endpoint=email_address
+						)
+					else:
+						print_message("SUBSCRIBE_TO_EMAIL_SMS set to false. Not subscribing to email")
 	except ClientError as cesnscreatetopic:
 		print_message("Error while calling create_topic for %s: %s" % (topic_name, cesnscreatetopic), ERROR_MESSAGE)
 		raise
